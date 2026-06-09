@@ -1,0 +1,824 @@
+import { useState, useEffect, useCallback } from "react";
+
+const STORAGE_KEYS = {
+  USER: "fintrack_user",
+  EXPENSES: "fintrack_expenses",
+  INCOME: "fintrack_income",
+  INVESTMENTS: "fintrack_investments",
+  LOGGED_IN: "fintrack_loggedin",
+};
+
+const EXPENSE_CATEGORIES = [
+  "Food & Dining","Groceries","Transport","Fuel","Entertainment",
+  "Shopping","Healthcare","Education","Utilities","Rent","EMI",
+  "Subscriptions","Travel","Personal Care","Gifts","Other",
+];
+
+const PAYMENT_METHODS = [
+  "Cash","UPI - GPay","UPI - PhonePe","UPI - Paytm","UPI - BHIM",
+  "Credit Card","Debit Card","Net Banking","Cheque","Other",
+];
+
+const INVESTMENT_TYPES = [
+  "Mutual Fund","SIP","Stocks","PPF","FD","RD","NPS","Gold","Real Estate",
+  "Crypto","Bonds","ETF","ELSS","Other",
+];
+
+function useStorage(key, initial) {
+  const [val, setVal] = useState(() => {
+    try {
+      const s = localStorage.getItem(key);
+      return s ? JSON.parse(s) : initial;
+    } catch { return initial; }
+  });
+  const set = useCallback((v) => {
+    setVal(v);
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+  }, [key]);
+  return [val, set];
+}
+
+function fmt(n) {
+  return "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function today() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+      <div style={{ background: "var(--color-background-primary)", borderRadius: 16, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", border: "0.5px solid var(--color-border-secondary)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1.25rem 1.5rem", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 20 }}>
+            <i className="ti ti-x" />
+          </button>
+        </div>
+        <div style={{ padding: "1.5rem" }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: "block", fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 6 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputStyle = {
+  width: "100%", boxSizing: "border-box", padding: "8px 12px",
+  border: "0.5px solid var(--color-border-secondary)", borderRadius: 8,
+  background: "var(--color-background-secondary)", color: "var(--color-text-primary)",
+  fontSize: 14,
+};
+
+const selectStyle = { ...inputStyle };
+
+function LoginPage({ onLogin }) {
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", age: "", org: "", salary: "" });
+  const [err, setErr] = useState("");
+
+  const handle = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+
+  const submit = () => {
+    if (mode === "login") {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || "null");
+      if (!saved) { setErr("No account found. Please register."); return; }
+      if (saved.email === form.email && saved.password === form.password) {
+        localStorage.setItem(STORAGE_KEYS.LOGGED_IN, "true");
+        onLogin(saved);
+      } else { setErr("Invalid email or password."); }
+    } else {
+      if (!form.name || !form.email || !form.password) { setErr("Name, email, and password are required."); return; }
+      const user = { ...form, cards: [], id: Date.now() };
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+      localStorage.setItem(STORAGE_KEYS.LOGGED_IN, "true");
+      onLogin(user);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-background-tertiary)", fontFamily: "var(--font-sans)" }}>
+      <div style={{ width: "100%", maxWidth: 420, background: "var(--color-background-primary)", borderRadius: 20, border: "0.5px solid var(--color-border-tertiary)", padding: "2.5rem 2rem" }}>
+        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: "var(--color-background-success)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem" }}>
+            <i className="ti ti-report-money" style={{ fontSize: 28, color: "var(--color-text-success)" }} />
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>FinTrack</h1>
+          <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: "4px 0 0" }}>Your personal finance dashboard</p>
+        </div>
+
+        <div style={{ display: "flex", marginBottom: "1.5rem", background: "var(--color-background-secondary)", borderRadius: 10, padding: 4 }}>
+          {["login", "register"].map(m => (
+            <button key={m} onClick={() => { setMode(m); setErr(""); }}
+              style={{ flex: 1, padding: "7px 0", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: mode === m ? 500 : 400, background: mode === m ? "var(--color-background-primary)" : "transparent", color: mode === m ? "var(--color-text-primary)" : "var(--color-text-secondary)", transition: "all 0.15s" }}>
+              {m === "login" ? "Sign in" : "Register"}
+            </button>
+          ))}
+        </div>
+
+        {mode === "register" && (
+          <>
+            <Field label="Full name"><input style={inputStyle} name="name" value={form.name} onChange={handle} placeholder="Rahul Sharma" /></Field>
+            <Field label="Phone"><input style={inputStyle} name="phone" value={form.phone} onChange={handle} placeholder="+91 9876543210" /></Field>
+            <Field label="Age"><input style={inputStyle} name="age" type="number" value={form.age} onChange={handle} placeholder="28" /></Field>
+            <Field label="Organisation"><input style={inputStyle} name="org" value={form.org} onChange={handle} placeholder="Infosys Ltd." /></Field>
+            <Field label="Monthly salary (₹)"><input style={inputStyle} name="salary" type="number" value={form.salary} onChange={handle} placeholder="75000" /></Field>
+          </>
+        )}
+        <Field label="Email"><input style={inputStyle} name="email" value={form.email} onChange={handle} placeholder="you@email.com" /></Field>
+        <Field label="Password"><input style={inputStyle} type="password" name="password" value={form.password} onChange={handle} placeholder="••••••••" /></Field>
+
+        {err && <p style={{ color: "var(--color-text-danger)", fontSize: 13, margin: "0 0 12px" }}>{err}</p>}
+        <button onClick={submit} style={{ width: "100%", padding: "10px 0", background: "var(--color-background-success)", color: "var(--color-text-success)", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 500, cursor: "pointer" }}>
+          {mode === "login" ? "Sign in" : "Create account"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ProfilePage({ user, setUser }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ ...user });
+  const [cardForm, setCardForm] = useState({ name: "", number: "", bank: "", type: "Credit Card", limit: "" });
+  const [showCard, setShowCard] = useState(false);
+
+  const handle = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  const handleCard = (e) => setCardForm(c => ({ ...c, [e.target.name]: e.target.value }));
+
+  const saveProfile = () => {
+    const updated = { ...user, ...form };
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updated));
+    setUser(updated);
+    setEditing(false);
+  };
+
+  const addCard = () => {
+    if (!cardForm.name) return;
+    const cards = [...(user.cards || []), { ...cardForm, id: Date.now() }];
+    const updated = { ...user, cards };
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updated));
+    setUser(updated);
+    setCardForm({ name: "", number: "", bank: "", type: "Credit Card", limit: "" });
+    setShowCard(false);
+  };
+
+  const deleteCard = (id) => {
+    const cards = (user.cards || []).filter(c => c.id !== id);
+    const updated = { ...user, cards };
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updated));
+    setUser(updated);
+  };
+
+  const info = (label, val) => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+      <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 400 }}>{val || "—"}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>My profile</h2>
+        <button onClick={() => setEditing(true)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 13 }}>
+          <i className="ti ti-edit" style={{ fontSize: 16 }} /> Edit
+        </button>
+      </div>
+
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: "1.5rem" }}>
+          <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--color-background-info)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 500, color: "var(--color-text-info)" }}>
+            {(user.name || "U").charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <p style={{ margin: 0, fontWeight: 500, fontSize: 18 }}>{user.name || "User"}</p>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--color-text-secondary)" }}>{user.org || "Organisation not set"}</p>
+          </div>
+        </div>
+        {info("Email", user.email)}
+        {info("Phone", user.phone)}
+        {info("Age", user.age ? user.age + " years" : null)}
+        {info("Organisation", user.org)}
+        {info("Monthly salary", user.salary ? fmt(user.salary) : null)}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>Cards & accounts</h3>
+        <button onClick={() => setShowCard(true)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 13 }}>
+          <i className="ti ti-plus" style={{ fontSize: 16 }} /> Add card
+        </button>
+      </div>
+
+      {(user.cards || []).length === 0 && (
+        <div style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-tertiary)", border: "0.5px dashed var(--color-border-tertiary)", borderRadius: 12 }}>
+          <i className="ti ti-credit-card" style={{ fontSize: 28, display: "block", marginBottom: 8 }} />
+          No cards added yet
+        </div>
+      )}
+
+      {(user.cards || []).map(card => (
+        <div key={card.id} style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <i className="ti ti-credit-card" style={{ fontSize: 22, color: "var(--color-text-info)" }} />
+            <div>
+              <p style={{ margin: 0, fontWeight: 500, fontSize: 14 }}>{card.name}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{card.bank} · {card.type} {card.number ? "····" + card.number.slice(-4) : ""}</p>
+            </div>
+          </div>
+          <button onClick={() => deleteCard(card.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-danger)", fontSize: 18 }}>
+            <i className="ti ti-trash" />
+          </button>
+        </div>
+      ))}
+
+      {editing && (
+        <Modal title="Edit profile" onClose={() => setEditing(false)}>
+          <Field label="Full name"><input style={inputStyle} name="name" value={form.name} onChange={handle} /></Field>
+          <Field label="Email"><input style={inputStyle} name="email" value={form.email} onChange={handle} /></Field>
+          <Field label="Phone"><input style={inputStyle} name="phone" value={form.phone} onChange={handle} /></Field>
+          <Field label="Age"><input style={inputStyle} name="age" type="number" value={form.age} onChange={handle} /></Field>
+          <Field label="Organisation"><input style={inputStyle} name="org" value={form.org} onChange={handle} /></Field>
+          <Field label="Monthly salary (₹)"><input style={inputStyle} name="salary" type="number" value={form.salary} onChange={handle} /></Field>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setEditing(false)} style={{ flex: 1, padding: "9px 0", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={saveProfile} style={{ flex: 1, padding: "9px 0", border: "none", borderRadius: 8, background: "var(--color-background-success)", color: "var(--color-text-success)", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Save changes</button>
+          </div>
+        </Modal>
+      )}
+
+      {showCard && (
+        <Modal title="Add card / account" onClose={() => setShowCard(false)}>
+          <Field label="Card / account name"><input style={inputStyle} name="name" value={cardForm.name} onChange={handleCard} placeholder="HDFC Regalia" /></Field>
+          <Field label="Bank name"><input style={inputStyle} name="bank" value={cardForm.bank} onChange={handleCard} placeholder="HDFC Bank" /></Field>
+          <Field label="Card type">
+            <select style={selectStyle} name="type" value={cardForm.type} onChange={handleCard}>
+              {["Credit Card","Debit Card","UPI","Savings Account","Wallet"].map(t => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Last 4 digits (optional)"><input style={inputStyle} name="number" value={cardForm.number} onChange={handleCard} maxLength={4} placeholder="4242" /></Field>
+          <Field label="Credit limit (if credit card)"><input style={inputStyle} name="limit" type="number" value={cardForm.limit} onChange={handleCard} placeholder="200000" /></Field>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setShowCard(false)} style={{ flex: 1, padding: "9px 0", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={addCard} style={{ flex: 1, padding: "9px 0", border: "none", borderRadius: 8, background: "var(--color-background-info)", color: "var(--color-text-info)", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Add card</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function ExpensesPage({ user }) {
+  const [expenses, setExpenses] = useStorage(STORAGE_KEYS.EXPENSES, []);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [filter, setFilter] = useState({ category: "All", month: "" });
+  const [form, setForm] = useState({ date: today(), amount: "", category: EXPENSE_CATEGORIES[0], description: "", paymentMethod: PAYMENT_METHODS[0], note: "" });
+
+  const handle = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+
+  const save = () => {
+    if (!form.amount || !form.date) return;
+    if (editing !== null) {
+      setExpenses(expenses.map(e => e.id === editing ? { ...form, id: editing } : e));
+      setEditing(null);
+    } else {
+      setExpenses([{ ...form, id: Date.now() }, ...expenses]);
+    }
+    setForm({ date: today(), amount: "", category: EXPENSE_CATEGORIES[0], description: "", paymentMethod: PAYMENT_METHODS[0], note: "" });
+    setShowForm(false);
+  };
+
+  const del = (id) => setExpenses(expenses.filter(e => e.id !== id));
+  const edit = (e) => { setForm({ ...e }); setEditing(e.id); setShowForm(true); };
+
+  const filtered = expenses.filter(e => {
+    if (filter.category !== "All" && e.category !== filter.category) return false;
+    if (filter.month && !e.date.startsWith(filter.month)) return false;
+    return true;
+  });
+
+  const total = filtered.reduce((s, e) => s + Number(e.amount || 0), 0);
+
+  const downloadCSV = () => {
+    const rows = [["Date","Description","Category","Amount","Payment Method","Note"]];
+    filtered.forEach(e => rows.push([e.date, e.description, e.category, e.amount, e.paymentMethod, e.note]));
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "expenses.csv"; a.click();
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>Expenses</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={downloadCSV} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 13 }}>
+            <i className="ti ti-download" /> Export CSV
+          </button>
+          <button onClick={() => { setEditing(null); setForm({ date: today(), amount: "", category: EXPENSE_CATEGORIES[0], description: "", paymentMethod: PAYMENT_METHODS[0], note: "" }); setShowForm(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "none", borderRadius: 8, background: "var(--color-background-danger)", color: "var(--color-text-danger)", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            <i className="ti ti-plus" /> Add expense
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: "1.5rem" }}>
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px" }}>
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>Total shown</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 500, color: "var(--color-text-danger)" }}>{fmt(total)}</p>
+        </div>
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px" }}>
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>Transactions</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>{filtered.length}</p>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem", flexWrap: "wrap" }}>
+        <select style={{ ...selectStyle, width: "auto", flex: 1, minWidth: 140 }} value={filter.category} onChange={e => setFilter(f => ({ ...f, category: e.target.value }))}>
+          <option>All</option>
+          {EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <input type="month" style={{ ...inputStyle, width: "auto", flex: 1, minWidth: 140 }} value={filter.month} onChange={e => setFilter(f => ({ ...f, month: e.target.value }))} />
+      </div>
+
+      {filtered.length === 0 && (
+        <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-tertiary)", border: "0.5px dashed var(--color-border-tertiary)", borderRadius: 12 }}>
+          <i className="ti ti-receipt" style={{ fontSize: 32, display: "block", marginBottom: 10 }} />
+          No expenses yet
+        </div>
+      )}
+
+      {filtered.map(e => (
+        <div key={e.id} style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--color-background-danger)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <i className="ti ti-shopping-bag" style={{ fontSize: 18, color: "var(--color-text-danger)" }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontWeight: 500, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.description || e.category}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{e.date} · {e.category} · {e.paymentMethod}</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-danger)", whiteSpace: "nowrap" }}>−{fmt(e.amount)}</span>
+            <button onClick={() => edit(e)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 17 }}><i className="ti ti-edit" /></button>
+            <button onClick={() => del(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-danger)", fontSize: 17 }}><i className="ti ti-trash" /></button>
+          </div>
+        </div>
+      ))}
+
+      {showForm && (
+        <Modal title={editing ? "Edit expense" : "Add expense"} onClose={() => setShowForm(false)}>
+          <Field label="Date"><input style={inputStyle} type="date" name="date" value={form.date} onChange={handle} /></Field>
+          <Field label="Amount (₹)"><input style={inputStyle} type="number" name="amount" value={form.amount} onChange={handle} placeholder="500" /></Field>
+          <Field label="Category">
+            <select style={selectStyle} name="category" value={form.category} onChange={handle}>
+              {EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Description"><input style={inputStyle} name="description" value={form.description} onChange={handle} placeholder="Lunch at Zomato" /></Field>
+          <Field label="Payment method">
+            <select style={selectStyle} name="paymentMethod" value={form.paymentMethod} onChange={handle}>
+              {PAYMENT_METHODS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </Field>
+          <Field label="Note (optional)"><input style={inputStyle} name="note" value={form.note} onChange={handle} placeholder="Any additional note" /></Field>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setShowForm(false)} style={{ flex: 1, padding: "9px 0", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={save} style={{ flex: 1, padding: "9px 0", border: "none", borderRadius: 8, background: "var(--color-background-danger)", color: "var(--color-text-danger)", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {editing ? "Update" : "Add expense"}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function IncomePage() {
+  const [income, setIncome] = useStorage(STORAGE_KEYS.INCOME, []);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ date: today(), amount: "", source: "Salary", description: "", account: "" });
+
+  const handle = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+
+  const save = () => {
+    if (!form.amount) return;
+    if (editing !== null) {
+      setIncome(income.map(i => i.id === editing ? { ...form, id: editing } : i));
+      setEditing(null);
+    } else {
+      setIncome([{ ...form, id: Date.now() }, ...income]);
+    }
+    setForm({ date: today(), amount: "", source: "Salary", description: "", account: "" });
+    setShowForm(false);
+  };
+
+  const del = (id) => setIncome(income.filter(i => i.id !== id));
+  const edit = (i) => { setForm({ ...i }); setEditing(i.id); setShowForm(true); };
+
+  const total = income.reduce((s, i) => s + Number(i.amount || 0), 0);
+
+  const downloadCSV = () => {
+    const rows = [["Date","Source","Description","Amount","Account"]];
+    income.forEach(i => rows.push([i.date, i.source, i.description, i.amount, i.account]));
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "income.csv"; a.click();
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>Income</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={downloadCSV} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 13 }}>
+            <i className="ti ti-download" /> Export CSV
+          </button>
+          <button onClick={() => { setEditing(null); setForm({ date: today(), amount: "", source: "Salary", description: "", account: "" }); setShowForm(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "none", borderRadius: 8, background: "var(--color-background-success)", color: "var(--color-text-success)", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            <i className="ti ti-plus" /> Add income
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: "1.5rem" }}>
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px" }}>
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>Total income</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 500, color: "var(--color-text-success)" }}>{fmt(total)}</p>
+        </div>
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px" }}>
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>Entries</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>{income.length}</p>
+        </div>
+      </div>
+
+      {income.length === 0 && (
+        <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-tertiary)", border: "0.5px dashed var(--color-border-tertiary)", borderRadius: 12 }}>
+          <i className="ti ti-cash" style={{ fontSize: 32, display: "block", marginBottom: 10 }} />
+          No income entries yet
+        </div>
+      )}
+
+      {income.map(i => (
+        <div key={i.id} style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--color-background-success)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <i className="ti ti-cash" style={{ fontSize: 18, color: "var(--color-text-success)" }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontWeight: 500, fontSize: 14 }}>{i.description || i.source}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{i.date} · {i.source} {i.account ? "· " + i.account : ""}</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-success)", whiteSpace: "nowrap" }}>+{fmt(i.amount)}</span>
+            <button onClick={() => edit(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 17 }}><i className="ti ti-edit" /></button>
+            <button onClick={() => del(i.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-danger)", fontSize: 17 }}><i className="ti ti-trash" /></button>
+          </div>
+        </div>
+      ))}
+
+      {showForm && (
+        <Modal title={editing ? "Edit income" : "Add income"} onClose={() => setShowForm(false)}>
+          <Field label="Date"><input style={inputStyle} type="date" name="date" value={form.date} onChange={handle} /></Field>
+          <Field label="Amount (₹)"><input style={inputStyle} type="number" name="amount" value={form.amount} onChange={handle} placeholder="75000" /></Field>
+          <Field label="Source">
+            <select style={selectStyle} name="source" value={form.source} onChange={handle}>
+              {["Salary","Freelance","Business","Rental","Dividend","Interest","Bonus","Refund","Other"].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label="Description"><input style={inputStyle} name="description" value={form.description} onChange={handle} placeholder="Monthly salary credit" /></Field>
+          <Field label="Account / bank"><input style={inputStyle} name="account" value={form.account} onChange={handle} placeholder="SBI Savings" /></Field>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setShowForm(false)} style={{ flex: 1, padding: "9px 0", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={save} style={{ flex: 1, padding: "9px 0", border: "none", borderRadius: 8, background: "var(--color-background-success)", color: "var(--color-text-success)", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {editing ? "Update" : "Add income"}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function InvestmentsPage() {
+  const [investments, setInvestments] = useStorage(STORAGE_KEYS.INVESTMENTS, []);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [filterType, setFilterType] = useState("All");
+  const [form, setForm] = useState({ date: today(), amount: "", type: INVESTMENT_TYPES[0], name: "", platform: "", units: "", nav: "", note: "" });
+
+  const handle = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+
+  const save = () => {
+    if (!form.amount || !form.name) return;
+    if (editing !== null) {
+      setInvestments(investments.map(i => i.id === editing ? { ...form, id: editing } : i));
+      setEditing(null);
+    } else {
+      setInvestments([{ ...form, id: Date.now() }, ...investments]);
+    }
+    setForm({ date: today(), amount: "", type: INVESTMENT_TYPES[0], name: "", platform: "", units: "", nav: "", note: "" });
+    setShowForm(false);
+  };
+
+  const del = (id) => setInvestments(investments.filter(i => i.id !== id));
+  const edit = (i) => { setForm({ ...i }); setEditing(i.id); setShowForm(true); };
+
+  const filtered = filterType === "All" ? investments : investments.filter(i => i.type === filterType);
+  const total = investments.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const filteredTotal = filtered.reduce((s, i) => s + Number(i.amount || 0), 0);
+
+  const byType = INVESTMENT_TYPES.reduce((acc, t) => {
+    const sum = investments.filter(i => i.type === t).reduce((s, i) => s + Number(i.amount || 0), 0);
+    if (sum > 0) acc[t] = sum;
+    return acc;
+  }, {});
+
+  const downloadCSV = () => {
+    const rows = [["Date","Name","Type","Amount","Platform","Units","NAV","Note"]];
+    filtered.forEach(i => rows.push([i.date, i.name, i.type, i.amount, i.platform, i.units, i.nav, i.note]));
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "investments.csv"; a.click();
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>Investments</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={downloadCSV} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 13 }}>
+            <i className="ti ti-download" /> Export CSV
+          </button>
+          <button onClick={() => { setEditing(null); setForm({ date: today(), amount: "", type: INVESTMENT_TYPES[0], name: "", platform: "", units: "", nav: "", note: "" }); setShowForm(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", border: "none", borderRadius: 8, background: "var(--color-background-info)", color: "var(--color-text-info)", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            <i className="ti ti-plus" /> Add investment
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: "1.5rem" }}>
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px" }}>
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>Total invested</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 500, color: "var(--color-text-info)" }}>{fmt(total)}</p>
+        </div>
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px" }}>
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>Instruments</p>
+          <p style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>{Object.keys(byType).length}</p>
+        </div>
+      </div>
+
+      {Object.keys(byType).length > 0 && (
+        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1.25rem", marginBottom: "1.5rem" }}>
+          <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 500 }}>Portfolio breakdown</p>
+          {Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, amt]) => (
+            <div key={type} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 13 }}>{type}</span>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{fmt(amt)} <span style={{ color: "var(--color-text-secondary)", fontWeight: 400 }}>({Math.round(amt / total * 100)}%)</span></span>
+              </div>
+              <div style={{ height: 6, background: "var(--color-background-secondary)", borderRadius: 3 }}>
+                <div style={{ height: "100%", borderRadius: 3, background: "var(--color-background-info)", width: Math.round(amt / total * 100) + "%" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginBottom: "1.5rem", overflowX: "auto" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "nowrap" }}>
+          {["All", ...INVESTMENT_TYPES.filter(t => byType[t])].map(t => (
+            <button key={t} onClick={() => setFilterType(t)}
+              style={{ padding: "5px 14px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 20, background: filterType === t ? "var(--color-background-info)" : "transparent", color: filterType === t ? "var(--color-text-info)" : "var(--color-text-secondary)", cursor: "pointer", fontSize: 13, whiteSpace: "nowrap", fontWeight: filterType === t ? 500 : 400 }}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filtered.length === 0 && (
+        <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-tertiary)", border: "0.5px dashed var(--color-border-tertiary)", borderRadius: 12 }}>
+          <i className="ti ti-chart-line" style={{ fontSize: 32, display: "block", marginBottom: 10 }} />
+          No investments yet
+        </div>
+      )}
+
+      {filtered.map(i => (
+        <div key={i.id} style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--color-background-info)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <i className="ti ti-trending-up" style={{ fontSize: 18, color: "var(--color-text-info)" }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontWeight: 500, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{i.date} · {i.type} {i.platform ? "· " + i.platform : ""} {i.units ? "· " + i.units + " units" : ""}</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-info)", whiteSpace: "nowrap" }}>{fmt(i.amount)}</span>
+            <button onClick={() => edit(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 17 }}><i className="ti ti-edit" /></button>
+            <button onClick={() => del(i.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-danger)", fontSize: 17 }}><i className="ti ti-trash" /></button>
+          </div>
+        </div>
+      ))}
+
+      {showForm && (
+        <Modal title={editing ? "Edit investment" : "Add investment"} onClose={() => setShowForm(false)}>
+          <Field label="Date"><input style={inputStyle} type="date" name="date" value={form.date} onChange={handle} /></Field>
+          <Field label="Name / fund"><input style={inputStyle} name="name" value={form.name} onChange={handle} placeholder="Axis Bluechip Fund" /></Field>
+          <Field label="Type">
+            <select style={selectStyle} name="type" value={form.type} onChange={handle}>
+              {INVESTMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Amount invested (₹)"><input style={inputStyle} type="number" name="amount" value={form.amount} onChange={handle} placeholder="10000" /></Field>
+          <Field label="Platform / broker"><input style={inputStyle} name="platform" value={form.platform} onChange={handle} placeholder="Zerodha / Groww" /></Field>
+          <Field label="Units (optional)"><input style={inputStyle} type="number" name="units" value={form.units} onChange={handle} placeholder="100.5" /></Field>
+          <Field label="NAV / price (optional)"><input style={inputStyle} type="number" name="nav" value={form.nav} onChange={handle} placeholder="99.5" /></Field>
+          <Field label="Note"><input style={inputStyle} name="note" value={form.note} onChange={handle} /></Field>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setShowForm(false)} style={{ flex: 1, padding: "9px 0", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={save} style={{ flex: 1, padding: "9px 0", border: "none", borderRadius: 8, background: "var(--color-background-info)", color: "var(--color-text-info)", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              {editing ? "Update" : "Add investment"}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function DashboardPage({ user }) {
+  const [expenses] = useStorage(STORAGE_KEYS.EXPENSES, []);
+  const [income] = useStorage(STORAGE_KEYS.INCOME, []);
+  const [investments] = useStorage(STORAGE_KEYS.INVESTMENTS, []);
+
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthExpenses = expenses.filter(e => e.date && e.date.startsWith(thisMonth));
+  const monthIncome = income.filter(i => i.date && i.date.startsWith(thisMonth));
+  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const totalIncome = income.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const totalInvested = investments.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const savings = totalIncome - totalExpenses - totalInvested;
+  const monthExp = monthExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const monthInc = monthIncome.reduce((s, i) => s + Number(i.amount || 0), 0);
+
+  const catBreakdown = EXPENSE_CATEGORIES.reduce((acc, c) => {
+    const sum = monthExpenses.filter(e => e.category === c).reduce((s, e) => s + Number(e.amount || 0), 0);
+    if (sum > 0) acc[c] = sum;
+    return acc;
+  }, {});
+
+  const recent = [...expenses].sort((a, b) => b.id - a.id).slice(0, 5);
+
+  const downloadAll = () => {
+    const toCSV = (rows) => rows.map(r => r.map(v => `"${v}"`).join(",")).join("\n");
+    const expCsv = toCSV([["Date","Description","Category","Amount","Payment"], ...expenses.map(e => [e.date, e.description, e.category, e.amount, e.paymentMethod])]);
+    const incCsv = toCSV([["Date","Source","Description","Amount"], ...income.map(i => [i.date, i.source, i.description, i.amount])]);
+    const invCsv = toCSV([["Date","Name","Type","Amount","Platform"], ...investments.map(i => [i.date, i.name, i.type, i.amount, i.platform])]);
+    const full = "EXPENSES\n" + expCsv + "\n\nINCOME\n" + incCsv + "\n\nINVESTMENTS\n" + invCsv;
+    const blob = new Blob([full], { type: "text/csv" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "fintrack-full-export.csv"; a.click();
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>Overview</h2>
+          <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--color-text-secondary)" }}>Welcome back, {user.name || "there"}</p>
+        </div>
+        <button onClick={downloadAll} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 13 }}>
+          <i className="ti ti-download" /> Export all
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: "1.5rem" }}>
+        {[
+          { label: "Total income", value: fmt(totalIncome), color: "success" },
+          { label: "Total expenses", value: fmt(totalExpenses), color: "danger" },
+          { label: "Total invested", value: fmt(totalInvested), color: "info" },
+          { label: "Net savings", value: fmt(Math.max(0, savings)), color: savings >= 0 ? "success" : "danger" },
+        ].map(m => (
+          <div key={m.label} style={{ background: "var(--color-background-secondary)", borderRadius: 10, padding: "14px 16px" }}>
+            <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>{m.label}</p>
+            <p style={{ margin: 0, fontSize: 18, fontWeight: 500, color: `var(--color-text-${m.color})` }}>{m.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14, marginBottom: "1.5rem" }}>
+        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 14, padding: "1.25rem" }}>
+          <p style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 500 }}>This month</p>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Income</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-success)" }}>{fmt(monthInc)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Expenses</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-danger)" }}>{fmt(monthExp)}</span>
+          </div>
+          <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Balance</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: monthInc - monthExp >= 0 ? "var(--color-text-success)" : "var(--color-text-danger)" }}>{fmt(monthInc - monthExp)}</span>
+          </div>
+        </div>
+
+        {Object.keys(catBreakdown).length > 0 && (
+          <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 14, padding: "1.25rem" }}>
+            <p style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 500 }}>Top spending this month</p>
+            {Object.entries(catBreakdown).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cat, amt]) => (
+              <div key={cat} style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{cat}</span>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{fmt(amt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {recent.length > 0 && (
+        <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 14, padding: "1.25rem" }}>
+          <p style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 500 }}>Recent expenses</p>
+          {recent.map(e => (
+            <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 14 }}>{e.description || e.category}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{e.date} · {e.paymentMethod}</p>
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-danger)" }}>−{fmt(e.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const NAV_ITEMS = [
+  { id: "dashboard", icon: "ti-layout-dashboard", label: "Overview" },
+  { id: "expenses", icon: "ti-receipt", label: "Expenses" },
+  { id: "income", icon: "ti-cash", label: "Income" },
+  { id: "investments", icon: "ti-trending-up", label: "Invest" },
+  { id: "profile", icon: "ti-user", label: "Profile" },
+];
+
+export default function App() {
+  const [user, setUser] = useStorage(STORAGE_KEYS.USER, null);
+  const [loggedIn, setLoggedIn] = useStorage(STORAGE_KEYS.LOGGED_IN, false);
+  const [page, setPage] = useState("dashboard");
+
+  const handleLogin = (u) => { setUser(u); setLoggedIn(true); };
+  const handleLogout = () => { setLoggedIn(false); };
+
+  if (!loggedIn) return <LoginPage onLogin={handleLogin} />;
+
+  return (
+    <div style={{ fontFamily: "var(--font-sans)", minHeight: "100vh", background: "var(--color-background-tertiary)", display: "flex", flexDirection: "column" }}>
+      <header style={{ background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", height: 56, position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--color-background-success)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <i className="ti ti-report-money" style={{ fontSize: 17, color: "var(--color-text-success)" }} />
+          </div>
+          <span style={{ fontWeight: 500, fontSize: 16 }}>FinTrack</span>
+        </div>
+        <button onClick={handleLogout} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--color-text-secondary)" }}>
+          <i className="ti ti-logout" style={{ fontSize: 15 }} /> Sign out
+        </button>
+      </header>
+
+      <div style={{ display: "flex", flex: 1 }}>
+        <nav style={{ width: 200, background: "var(--color-background-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", padding: "1rem 0.75rem", display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+          {NAV_ITEMS.map(n => (
+            <button key={n.id} onClick={() => setPage(n.id)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 14, background: page === n.id ? "var(--color-background-secondary)" : "transparent", color: page === n.id ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontWeight: page === n.id ? 500 : 400, textAlign: "left" }}>
+              <i className={`ti ${n.icon}`} style={{ fontSize: 18 }} /> {n.label}
+            </button>
+          ))}
+        </nav>
+
+        <main style={{ flex: 1, padding: "2rem", overflowY: "auto", minWidth: 0 }}>
+          {page === "dashboard" && <DashboardPage user={user} />}
+          {page === "expenses" && <ExpensesPage user={user} />}
+          {page === "income" && <IncomePage />}
+          {page === "investments" && <InvestmentsPage />}
+          {page === "profile" && <ProfilePage user={user} setUser={setUser} />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
